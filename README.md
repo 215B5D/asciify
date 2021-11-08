@@ -3,7 +3,7 @@
 ---
 > ### setup
 > install [deno](https://deno.land)<br>
-> import `https://github.com/215B5D/asciify/raw/master/mod.ts`
+> import `https://raw.githubusercontent.com/215B5D/asciify/main/mod.ts`
 ---
 > ### usage
 > check `example.ts` for an example<br>
