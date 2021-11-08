@@ -70,7 +70,7 @@ class ImageUtility {
         }
 
         if (y < decoded.height - characterWidth)
-          output += "\n";
+          output += "\r\n";
       }
 
       strings.push(output)
