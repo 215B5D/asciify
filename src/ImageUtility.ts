@@ -15,6 +15,7 @@ interface IImageOptions {
   width: number;
   color?: boolean;
   characters: string | string[];
+  padding?: boolean;
 }
 
 interface IRGBA {
@@ -24,57 +25,113 @@ interface IRGBA {
   a: number;
 };
 
+interface IDimensions {
+  width: number;
+  height: number,
+  area: number
+};
+
 import { IDecoded } from "./FileUtility.ts";
 
 // Types
 type Image = IImageOptions;
 type RGBA = IRGBA;
+type Dimensions = IDimensions;
+
+// Constants
+const ESCAPE_REGEX = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g; // Thanks: https://stackoverflow.com/a/29497680
 
 // ImageUtility Class
 class ImageUtility {
+  // Class Variables
+  public image: Image;
+
+  public raw: Uint8Array | undefined;
+  public decoded: IDecoded | undefined;
+
+  constructor(image: Image) {
+    this.image = image;
+
+    this.raw;
+    this.decoded;
+  }
+
+  /**
+   * Loads the image into memory
+   * TODO: Add URL suppport here
+   * 
+   * @returns {Promise<void} - Returns a promise that resolves when the image is loaded
+   */
+  load = async (): Promise<void> => {
+    this.raw = await Deno.readFile(this.image.path);
+
+    if(!FileUtility.getFileType(this.raw))
+      throw "Invalid file type! (Supported: PNG, JPG, GIF)";
+
+    this.decoded = await FileUtility.decode(this.raw);
+  }
+
+  /**
+   * Calculates the dimensions of a string
+   * 
+   * @param {string} string - The string to calculate the dimensions of
+   * @returns {Dimensions} - Returns the dimensions of the string
+   */
+  calculateDimensions = (str: string): Dimensions => {
+    const stripped: string[] = str.split("\n").map(string => string.replace(ESCAPE_REGEX, ""));
+    
+    const width: number = stripped[0].length;
+    const height = stripped.length;
+
+    return {
+      width,
+      height,
+      area: width * height
+    }
+  }
+
   /**
    * Decodes an image into an array of strings which can be used to display it in the terminal.
    * 
    * @param {Image} imnage - Image object
    * @returns {Promise<string[]>} - Returns a promise that resolves to the image as an array of strings.
    */
-  static getImageStrings = async (image: Image): Promise<string[]> => {
-    const raw = await FileUtility.read(image.path);
-    
-    if(!FileUtility.getFileType(raw))
-      throw "Invalid file type! (Supported: PNG, JPG, GIF)";
+  getImageStrings = (): string[] => {
+    if(!this.raw || !this.decoded)
+      throw "Please call `load()` before attempting to fetch strings!";
+  
+    const strings: string[] = [];
 
-    const decoded: IDecoded = await FileUtility.decode(raw);
+    const characterWidth = Math.ceil(this.decoded.width / this.image.width);
 
-    let strings: string[] = [];
-
-    const characterWidth = Math.ceil(decoded.width / image.width);
-
-    for(let i = 0; i < decoded.frames; i++) {
+    for(let i = 0; i < this.decoded.frames; i++) {
       let output = "";
 
-      for(let y = characterWidth; y <= decoded.height - characterWidth; y += characterWidth * 2) {
-        for(let x = characterWidth / 2; x <= decoded.width - characterWidth / 2; x += 0) {
-          const pixel = this.getPixel(decoded, Math.floor(x), Math.floor(y), i),
+      for(let y = characterWidth; y <= this.decoded.height - characterWidth; y += characterWidth * 2) {
+        for(let x = characterWidth / 2; x <= this.decoded.width - characterWidth / 2; x += 0) {
+          const pixel = this.getPixel(Math.floor(x), Math.floor(y), i),
                 grayscale = (pixel.r + pixel.g + pixel.b) / 3;
 
           if(typeof grayscale === "undefined")
             throw "Invalid image! (No grayscale)";
   
-          const index = Math.floor(grayscale / 255 * (image.characters.length - 0.5));
+          const index = Math.floor(grayscale / 255 * (this.image.characters.length - 0.5));
   
-          const char = image.color ? colors.rgb24(image.characters[index], pixel) : image.characters[index];
+          const char = this.image.color ? colors.rgb24(this.image.characters[index], pixel) : this.image.characters[index];
           
           output += char;
           x += characterWidth * stringWidth(char);
         }
 
-        if (y < decoded.height - characterWidth)
+        if (y < this.decoded.height - characterWidth)
           output += "\r\n";
       }
 
       strings.push(output)
     }
+
+    if(this.image.padding)
+      strings[strings.length - 1] += "\r\n";
 
     return strings;
   }
@@ -82,15 +139,18 @@ class ImageUtility {
   /**
    * Get the color of a pixel at a specific position.
    * 
-   * @param {IDecodeD} decoded - The decoded file.
+   * @private
    * @param {number} x - The x position. 
    * @param {number} y - The y position. 
    * @param {number} index - The frame index.
    * @returns {RGBA} The color of the pixel.
    */
-  static getPixel = (decoded: IDecoded, x: number, y: number, index: number): RGBA => {
-    const data = decoded.buffer.subarray(index * decoded.size, (index + 1) * decoded.size),
-          _index = x + (y * decoded.width);
+  getPixel = (x: number, y: number, index: number): RGBA => {
+    if(!this.raw || !this.decoded)
+      throw "Please call `load()` before attempting to get a pixel!";
+
+    const data = this.decoded.buffer.subarray(index * this.decoded.size, (index + 1) * this.decoded.size),
+          _index = x + (y * this.decoded.width);
 
     return {
       r: data[_index * 4],
